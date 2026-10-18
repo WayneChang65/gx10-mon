@@ -1,0 +1,31 @@
+{
+  "name": "gx10-mon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "gx10 (DGX Spark) system monitor dashboard — TypeScript, zero heavy deps",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "esbuild src/server.ts --bundle --platform=node --format=esm --external:node:* --outfile=dist/server.js && node scripts/build-web.mjs",
+    "start": "node dist/server.js",
+    "dev": "node --env-file-if-exists=.env src/dev.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "chart.js": "^4.5.1",
+    "chartjs-adapter-date-fns": "^3.0.0",
+    "chartjs-plugin-zoom": "^2.2.0",
+    "date-fns": "^4.4.0",
+    "hono": "^4.7.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@types/node": "^24.0.0",
+    "@types/three": "^0.186.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}

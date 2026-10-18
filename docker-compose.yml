@@ -1,0 +1,47 @@
+# gx10-mon — 一鍵啟動：docker compose up -d
+# 區網服務：只綁本機 port，不對外、不掛 Traefik
+services:
+  gx10-mon:
+    build: .
+    image: gx10-mon:local
+    container_name: gx10-mon
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8090}:8090"
+    environment:
+      HOST_PORT: "8090"
+      DATA_FILE: /app/data/metrics.db
+      SAMPLE_INTERVAL_MS: ${SAMPLE_INTERVAL_MS:-1000}
+      GPU_EVERY_N: ${GPU_EVERY_N:-5}
+      ALERT_SOC_MAX_C: ${ALERT_SOC_MAX_C:-90}
+      ALERT_MEM_AVAIL_GB: ${ALERT_MEM_AVAIL_GB:-4}
+      ALERT_SWAP_USED_GB: ${ALERT_SWAP_USED_GB:-12}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      HOST_PROC: /host/proc
+      HOST_SYS: /sys
+      DISK_STAT_PATH: /host/root
+    volumes:
+      - ./data:/app/data
+      - /proc:/host/proc:ro
+      - /:/host/root:ro
+      - /sys/class/thermal:/sys/class/thermal:ro
+      # 網卡計數器：/proc/net/dev 在容器內被 namespace 隔離，改讀宿主 sysfs
+      - /sys/class/net:/sys/class/net:ro
+      - /sys/class/hwmon:/sys/class/hwmon:ro
+      - /sys/devices/system/cpu:/sys/devices/system/cpu:ro
+    # GPU：NVIDIA Container Runtime 自動注入 nvidia-smi 與驅動庫（已實測 node:24-slim 可用）
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

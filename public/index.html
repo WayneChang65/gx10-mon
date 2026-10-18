@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>gx10 · DGX Spark</title>
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand"><span class="dot" id="connDot"></span><span class="title">gx10</span><span class="sub">DGX Spark</span></div>
+  <div class="topmeta">
+    <span id="up">—</span><span class="sep">·</span>
+    <span>Load <b id="load">—</b></span><span class="sep">·</span>
+    <span id="alertBadge" class="badge">OK</span>
+  </div>
+</header>
+
+<div id="alertWave"></div>
+
+<main>
+  <section id="hero">
+    <canvas id="fx"></canvas>
+    <div id="heroHud">
+      <div class="hudrow"><label>GPU</label><b id="hGpu">—</b></div>
+      <div class="hudrow"><label>SoC MAX</label><b id="hTemp">—</b></div>
+      <div class="hudrow"><label>RAM</label><b id="hMem">—</b></div>
+      <div class="hudrow right"><button id="fxToggle" title="Toggle 3D effects">✦ FX</button></div>
+    </div>
+  </section>
+
+  <section id="rows">
+    <div class="card" id="cGpu">
+      <h3>GPU <small id="gpuPctl">—</small><span class="ranges" data-t="gpu"></span></h3>
+      <div class="mini"><span id="gTemp">—</span><span id="gPow">—</span></div>
+      <div class="chart"><canvas id="chGpu"></canvas></div>
+    </div>
+    <div class="card" id="cCpu">
+      <h3>CPU <small id="cpuPctl">—</small><span class="ranges" data-t="cpu"></span></h3>
+      <div class="chart"><canvas id="chCpu"></canvas></div>
+    </div>
+    <div class="card" id="cMem">
+      <h3>RAM <small id="memPctl">—</small><span class="ranges" data-t="mem"></span></h3>
+      <div class="mini"><span id="mSwap">—</span></div>
+      <div class="chart"><canvas id="chMem"></canvas></div>
+    </div>
+    <div class="card" id="cTemp">
+      <h3>Temp <small>SoC·NVMe</small><span class="ranges" data-t="temp"></span></h3>
+      <div class="chart"><canvas id="chTemp"></canvas></div>
+    </div>
+    <div class="card" id="cNet">
+      <h3>Net <small>↓ Down · ↑ Up</small><span class="ranges" data-t="net"></span></h3>
+      <div class="chart"><canvas id="chNet"></canvas></div>
+    </div>
+    <div class="card" id="cDisk">
+      <h3>Disk <small>R/W MB/s · usage % right axis</small><span class="ranges" data-t="disk"></span></h3>
+      <div class="chart"><canvas id="chDisk"></canvas></div>
+    </div>
+  </section>
+
+  <section id="procs">
+    <div class="card half" id="pCpu">
+      <h3>Top CPU<span class="ranges" data-p="proccpu"></span></h3>
+      <table id="tCpu"><thead><tr><th>PID</th><th>Process</th><th>%</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="card half" id="pMem">
+      <h3>Top MEM<span class="ranges" data-p="procmem"></span></h3>
+      <table id="tMem"><thead><tr><th>PID</th><th>Process</th><th>MB</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

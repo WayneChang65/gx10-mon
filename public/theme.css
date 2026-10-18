@@ -1,0 +1,193 @@
+/* gx10-mon — 科技感玻璃擬態主題 */
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  src: url('/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+:root {
+  --bg: #0a0f14;
+  --bg2: #0d141c;
+  --teal: #2dd4bf;
+  --amber: #f59e0b;
+  --crit: #ef4444;
+  --line: rgba(45, 212, 191, .14);
+  --glass: rgba(16, 26, 34, .62);
+  --txt: #d7e4e2;
+  --dim: #5f7a78;
+  --mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: var(--bg); }
+body {
+  font-family: var(--mono);
+  color: var(--txt);
+  background:
+    radial-gradient(1200px 600px at 70% -10%, rgba(45,212,191,.07), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgba(45,212,191,.05), transparent 60%),
+    var(--bg);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+header#top {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 18px;
+  backdrop-filter: blur(14px);
+  background: rgba(10, 15, 20, .75);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand .title { color: var(--teal); font-weight: 700; font-size: 18px; letter-spacing: .12em; }
+.brand .sub { color: var(--dim); font-size: 12px; letter-spacing: .2em; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); display: inline-block;
+  box-shadow: 0 0 10px var(--teal); align-self: center; transition: background .5s; }
+.dot.off { background: var(--crit); box-shadow: 0 0 10px var(--crit); }
+.topmeta { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--dim); }
+.topmeta b { color: var(--txt); font-weight: 500; }
+.sep { opacity: .35; }
+.badge { border: 1px solid var(--line); border-radius: 20px; padding: 3px 12px; color: var(--teal);
+  transition: all .4s; }
+.badge.alarm { color: var(--crit); border-color: var(--crit); animation: pulse 1.2s infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 16px rgba(239,68,68,.5); } }
+
+#alertWave { position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 40; opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--crit), transparent);
+  transition: opacity .3s; }
+#alertWave.on { opacity: 1; animation: wave 1.6s infinite; }
+@keyframes wave { 50% { transform: scaleX(.6); opacity: .4; } }
+
+main { max-width: 1180px; margin: 0 auto; padding: 14px 14px 40px; display: grid; gap: 14px; }
+
+section#hero { position: relative; height: 170px; border-radius: 16px; overflow: hidden;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(300px circle at var(--mx, -9999px) var(--my, -9999px), rgba(45,212,191,.10), transparent 70%),
+    linear-gradient(180deg, var(--bg2), #0b1118); }
+#fx { width: 100%; height: 100%; display: block; }
+#heroHud { position: absolute; right: 14px; top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.hudrow { display: flex; gap: 10px; justify-content: flex-end; align-items: baseline; }
+.hudrow label { color: var(--dim); font-size: 11px; letter-spacing: .14em; }
+.hudrow b { color: var(--teal); font-size: 15px; min-width: 86px; text-align: right; font-variant-numeric: tabular-nums; }
+#fxToggle { background: transparent; border: 1px solid var(--line); color: var(--dim);
+  font-family: var(--mono); font-size: 11px; padding: 4px 10px; border-radius: 8px; cursor: pointer; }
+#fxToggle:hover, #fxToggle.act { color: var(--teal); border-color: var(--teal); }
+
+section#rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+section#curves { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+#curves .card.wide:not(.half) { grid-column: 1 / -1; }
+section#procs { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+.card {
+  min-width: 0; /* 防 Chart.js 殘留 canvas inline 寬度撐爆 grid（縮回後左側空白的根因） */
+  background:
+    radial-gradient(240px circle at var(--mx, -9999px) var(--my, -9999px), rgba(45,212,191,.09), transparent 70%),
+    var(--glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  animation: rise .5s ease both;
+}
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+.card h3 { font-size: 12px; font-weight: 600; letter-spacing: .16em; color: var(--txt);
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.card h3 small { color: var(--dim); font-weight: 400; letter-spacing: .06em; }
+.card h3 .ranges { margin-left: auto; display: inline-flex; gap: 4px; }
+.ranges button { background: transparent; border: 1px solid transparent; color: var(--dim);
+  font-family: var(--mono); font-size: 10px; padding: 2px 7px; border-radius: 6px; cursor: pointer; }
+.ranges button.on { color: var(--teal); border-color: var(--line); background: rgba(45,212,191,.08); }
+.ranges button.zoomb { margin-left: 6px; border-color: var(--line); }
+.ranges button.ayb { margin-left: 6px; }
+.ranges button.ayb.on { border-style: dashed; }
+
+/* Auto-Y 開啟時的 Y 軸範圍提示（相對軸防誤讀） */
+.ytag { position: absolute; top: 2px; left: 46px; z-index: 2; pointer-events: none;
+  font-family: var(--mono); font-size: 9px; letter-spacing: .05em; color: var(--dim);
+  background: rgba(10,15,20,.55); border: 1px dashed var(--line); border-radius: 5px; padding: 1px 6px; }
+
+/* 按鈕按壓＋點擊漣漪（滑鼠互動回饋） */
+button { position: relative; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+button:active { transform: scale(.955); }
+#fx, #hero { cursor: pointer; }
+.ripple { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none;
+  border: 1.5px solid rgba(45,212,191,.75); border-radius: 50%;
+  translate: -50% -50%; animation: ripple .45s ease-out forwards; }
+@keyframes ripple { to { width: 130px; height: 130px; opacity: 0; border-width: .5px; } }
+@media (prefers-reduced-motion: reduce) {
+  .ripple { display: none; }
+  button:active { transform: none; }
+}
+
+/* 整張圖全螢幕放大 */
+.card.big { position: fixed; inset: 14px; z-index: 50; overflow: auto;
+  background: var(--bg2); border-color: var(--teal); box-shadow: 0 0 60px rgba(13,148,136,.25);
+  padding: 18px 20px; }
+#rows .card.big .chart { height: calc(100vh - 190px); }
+body.hasBig { overflow: hidden; }
+
+/* 摺疊態：整張圖收成一小行，只留標題＋摘要 */
+.card.min { padding: 8px 14px; }
+.card.min h3 { margin-bottom: 0; }
+.card.min .chart { display: none; }
+.card.min table { display: none; }                       /* 表卡(Top CPU/MEM)摺態收掉表格 */
+.card.min .ranges button:not(.foldb) { display: none; }   /* 摺態不收時間窗/Auto-Y 沒意義，只留展開鈕 */
+.card.min .mini { display: none; }                        /* mini 列與摘要重複，摺態收掉 */
+.card.min h3 small { display: none; }                     /* 副標同樣重複，收掉 */
+.card h3 .sumline { display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10.5px; color: var(--txt); letter-spacing: .02em; white-space: nowrap; overflow: hidden; }
+.sumline i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; opacity: .9; }
+.sumline em { font-style: normal; color: var(--dim); margin-right: 2px; }
+.sumline s { text-decoration: none; width: 1px; height: 10px; background: var(--line); margin: 0 4px; }
+
+/* 摺疊鈕（右上角圖示）與放大鈕（左下角圖示） */
+.ranges button.foldb { margin-left: 6px; border-color: var(--line); display: inline-flex; align-items: center; }
+.ranges button.foldb.on { color: var(--teal); border-style: dashed; }
+.chart .expb { position: absolute; left: 4px; bottom: 2px; z-index: 2; width: 24px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  background: var(--glass); border: 1px solid var(--line); border-radius: 6px; color: var(--dim);
+  opacity: .45; transition: opacity .18s ease, color .18s ease; }
+.card:hover .expb, .expb.on { opacity: 1; }
+.expb:hover, .expb.on { color: var(--teal); border-color: var(--teal); }
+
+.barwrap { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.gbar { display: grid; grid-template-columns: 90px 1fr 44px; gap: 8px; align-items: center; font-size: 10px; color: var(--dim); }
+.gbar .track { height: 5px; border-radius: 3px; background: rgba(45,212,191,.1); overflow: hidden; }
+.gbar .fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--teal), #6ee7d3);
+  box-shadow: 0 0 8px rgba(45,212,191,.5); width: 0%; transition: width .8s; }
+.gbar .val { text-align: right; color: var(--txt); font-variant-numeric: tabular-nums; }
+.mini { display: flex; gap: 14px; font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+.mini span { color: var(--txt); font-variant-numeric: tabular-nums; }
+
+.chart { width: 100%; position: relative; }
+#rows .chart { height: 190px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 11px; }
+th { text-align: left; color: var(--dim); font-weight: 400; padding: 2px 6px; letter-spacing: .1em; }
+td { padding: 3px 6px; color: var(--txt); font-variant-numeric: tabular-nums;
+  border-top: 1px solid rgba(45,212,191,.06); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+td.num { text-align: right; color: var(--teal); }
+
+
+
+/* 手機版 */
+@media (max-width: 720px) {
+  #curves, section#procs { grid-template-columns: minmax(0, 1fr); }
+  #curves .card.wide:not(.half) { grid-column: auto; }
+  /* Hero 改兩欄實佈局：晶體居左、HUD 靠右各佔其位，3D 線條不再穿過文字 */
+  section#hero { height: 150px; display: grid; grid-template-columns: minmax(0, 1fr) 130px; }
+  #heroHud { position: static; padding: 10px 12px 0 0; gap: 4px; }
+  .hudrow b { font-size: 13px; min-width: 0; }
+  .hudrow label { font-size: 9px; letter-spacing: .08em; }
+  .topmeta { font-size: 10px; }
+  #rows .chart { height: 120px; }
+  header#top { padding: 8px 12px; }
+}
+@media (max-width: 400px) {
+  .brand .sub { display: none; } /* 320~380px 窄機型讓位給狀態列 */
+  .topmeta { gap: 6px; font-size: 9.5px; }
+  section#hero { grid-template-columns: minmax(0, 1fr) 112px; }
+}
