@@ -6,6 +6,8 @@ TypeScript full-stack: Node 24 + [Hono](https://hono.dev) + built-in `node:sqlit
 
 Design philosophy: **every pixel of the 3D "digital crystal" hero animation is driven by live metrics** — GPU utilisation sets spin speed and breathing amplitude, temperature drives the hue, RAM pressure drives the particle ring, network traffic drives the edge glow. No decorative animation.
 
+<img width="1507" height="834" alt="截圖 2026-10-19 14 29 55" src="https://github.com/user-attachments/assets/6199a4ba-5a53-4f7e-9c3a-f75674826358" />
+
 ## Features
 
 - **Charts** (each with 5m / 1h / 6h / 24h windows, per-chart Auto-Y fit, fullscreen expand, fold-to-summary row persisted in `localStorage`):
