@@ -3,11 +3,9 @@ import * as esbuild from 'esbuild';
 import { cpSync, mkdirSync, existsSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 
-// 版號戳章：GIT_SHA 由部署端傳入（compose build args → ENV）；取不到就標 dev
+// 版號戳章：只顯示 package.json 的 version；小青發版時自行 bump（fix=patch、feature=minor）
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
-const sha = process.env.GIT_SHA || 'dev';
-const built = new Date().toISOString().slice(0, 16).replace('T', ' ') + 'Z';
-const BUILD_INFO = `v${pkg.version} \u00b7 ${sha} \u00b7 ${built}`;
+const BUILD_INFO = `v${pkg.version}`;
 console.log('BUILD_INFO:', BUILD_INFO);
 
 await esbuild.build({

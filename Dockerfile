@@ -7,8 +7,6 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
 COPY public/index.html public/theme.css ./public/
-ARG GIT_SHA=dev
-ENV GIT_SHA=${GIT_SHA}
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-slim
