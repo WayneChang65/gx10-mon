@@ -29,6 +29,17 @@ export class Crystal {
   private edges!: THREE.LineSegments;
   private ring!: THREE.Points;
   private stars!: THREE.Points;
+  // GPU util 驅動「流星砸擊」：粒子環發射、直線撲向晶體，數量∝loading（CPU 模擬，零 shader）
+  private impacts!: THREE.Points;
+  private impAttr!: THREE.BufferAttribute;
+  private impPos = new Float32Array(0);
+  private impVel = new Float32Array(0);
+  private impTtl = new Float32Array(0);   // <0 = 死粒子（泊於地下不可見）
+  private impN = 0;
+  private emitAcc = 0;
+  private excite = 0;                     // 激發能量：砸中+1粒，τ=0.45s 衰減 → 剧烈運動
+  private ringR = 1;                      // 粒子環目前世界半徑（發射參考）
+  private frames = 0;
   private mat!: THREE.MeshStandardMaterial;
   private edgeMat!: DashedMat;
   private ringMat!: THREE.PointsMaterial;
@@ -70,6 +81,7 @@ export class Crystal {
     // 行動裝置 Safari 回前台時 WebGL context 可能已丢失：允許恢復並重繪
     canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); this.pause(); });
     canvas.addEventListener('webglcontextrestored', () => { this.resize(); this.resume(); });
+    (globalThis as { __gxmonCrystal?: unknown }).__gxmonCrystal = this;   // E2E 除錯柄
   }
 
   get enabled() { return this.wantOn; }
@@ -133,6 +145,21 @@ export class Crystal {
     this.stars = new THREE.Points(sg, new THREE.PointsMaterial({
       color: 0x355f5a, size: 0.05, transparent: true, opacity: 0.6 }));
     this.scene.add(this.stars);
+
+    // 流星池：固定池反覆利用，死粒子泊地下不出場
+    this.impN = innerWidth < 720 ? 40 : 90;
+    this.impPos = new Float32Array(this.impN * 3);
+    this.impVel = new Float32Array(this.impN * 3);
+    this.impTtl = new Float32Array(this.impN).fill(-1);
+    for (let i = 0; i < this.impN; i++) this.impPos[i * 3 + 1] = -999;
+    const ig = new THREE.BufferGeometry();
+    this.impAttr = new THREE.BufferAttribute(this.impPos, 3);
+    ig.setAttribute('position', this.impAttr);
+    this.impacts = new THREE.Points(ig, new THREE.PointsMaterial({
+      color: 0xffb347, size: 0.09, transparent: true, opacity: 0.95,
+      depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.impacts.frustumCulled = false;   // 每幀 CPU 更新位置，毋需內建包圍球
+    this.scene.add(this.impacts);
   }
 
   setData(d: Drive): void { this.drive = d; }
@@ -145,6 +172,30 @@ export class Crystal {
 
   /** 敲擊晶體：彈簧脈衝 */
   poke(): void { this.pokeV += 3.2; }
+
+  /** 發射一顆流星：粒子環隨機點 → 直線撲向晶體中心 */
+  private spawnImpact(): void {
+    const i = this.impTtl.indexOf(-1);
+    if (i < 0) return;                                    // 池滿，這顆作廢
+    const a = Math.random() * Math.PI * 2;
+    const r0 = this.ringR * (0.82 + Math.random() * 0.18);
+    const px = Math.cos(a) * r0 + this.ring.position.x;
+    const py = this.ring.position.y + (Math.random() - 0.5) * 0.18;
+    const pz = Math.sin(a) * r0 + this.ring.position.z;
+    const d = Math.hypot(px, py, pz) || 1;
+    const speed = 6 + Math.random() * 5;
+    const o = i * 3;
+    this.impPos[o] = px; this.impPos[o + 1] = py; this.impPos[o + 2] = pz;
+    this.impVel[o] = -px / d * speed; this.impVel[o + 1] = -py / d * speed; this.impVel[o + 2] = -pz / d * speed;
+    this.impTtl[i] = d / speed + 0.6;
+  }
+
+  /** E2E 除錯：砸擊現況快照 */
+  get impactDebug(): { excite: number; alive: number; frames: number } {
+    let alive = 0;
+    for (let i = 0; i < this.impN; i++) if (this.impTtl[i] >= 0) alive++;
+    return { excite: this.excite, alive, frames: this.frames };
+  }
 
   setOn(on: boolean): void {
     this.wantOn = on;
@@ -203,8 +254,8 @@ export class Crystal {
 
     // ① GPU util → 自轉速度＋軸線翻滾（高 util：歲差更快，且歲差參考軸本身擺盪 → 軌跡完全不規則＝忙碌感）
     const u = s.gpuUtil / 100;
-    this.spin = THREE.MathUtils.lerp(0.09, 4.2, u);            // rad/s：70 秒一圈 → 1.5 秒一圈
-    const tumble = (0.10 + 30 * u * u) * dt;                   // 歲差角速度：0% 微擺 → 100% 暴翻
+    this.spin = THREE.MathUtils.lerp(0.09, 4.2, u) * (1 + this.excite * 0.6);          // 砸擊能量再推轉速
+    const tumble = (0.10 + 30 * u * u) * (1 + this.excite * 1.2) * dt;                 // 歲差角速度：0% 微擺 → 100% 暴翻，激發時更翻
     const wob = u * u * Math.sin(t * (4 + 21 * u));            // 高載調變：100% 時參考軸全幅擺盪（~4Hz）
     const mix = 0.5 * (1 + wob);                               // 兩條參考軸之間的混合權重
     let nx = 0.2544 * mix + 0.88 * (1 - mix);
@@ -224,7 +275,7 @@ export class Crystal {
     this.qSpin.premultiply(this.qTmp.setFromAxisAngle(this.vTmp, this.spin * dt));
 
     // ①b GPU util → 呼吸縮放：閒置慢而微幅、忙碌快而劇烈；雙頻疊加不規則化＝喘氣感
-    const amp = 0.02 + 0.20 * u * u;                            // ±2% 微喘 → ±22% 劇喘（峰值 1.22x=頂角貼畫布上緣的幾何安全上限）
+    const amp = Math.min(0.22, 0.02 + 0.20 * u * u + this.excite * 0.05); // ±2% 微喘 → ±22% 劇喘；砸擊加分但 1.22x 幾何安全上限不破
     const rate = 1.8 + 11 * u;                                   // 0.29Hz 呼吸 → ~2.0Hz 急喘
     const br = Math.sin(t * rate) * 0.6 + Math.sin(t * rate * 1.7 + 1.3) * 0.4;
     this.crystal.scale.setScalar(1 + amp * br);
@@ -232,14 +283,38 @@ export class Crystal {
     // ② 溫度 → 色相（告警強制紅）
     const col = s.alarmed ? new THREE.Color(0xef4444) : tempColor(s.maxTempC);
     this.mat.emissive.copy(col);
+    this.mat.emissiveIntensity = 0.15 + this.excite * 0.45;   // 砸擊 → 晶體瞬時發亮
     (this.wire.material as THREE.LineBasicMaterial).color.copy(col);
     this.ringMat.color.copy(col);
 
     // ③ RAM 壓力 → 光圈半徑脈動＋粒子亮度
     const pulse = 1 + Math.sin(t * (1 + s.ramPct / 25)) * 0.06 * (s.ramPct / 100 + 0.3);
-    this.ring.scale.setScalar(pulse * this.ringFit);
+    this.ringR = pulse * this.ringFit;
+    this.ring.scale.setScalar(this.ringR);
     this.ring.rotation.y -= (0.001 + s.ramPct / 100 * 0.004) * (dt * 60);
     this.ringMat.opacity = 0.35 + (s.ramPct / 100) * 0.5;
+
+    // ③b 流星砸擊：發射率∝GPU loading（桌機滿載 ~30 顆/秒、手機 15）
+    this.excite *= Math.exp(-dt / 0.45);                      // 激發能量指數衰減
+    this.emitAcc += (this.impN >= 90 ? 30 : 15) * u * dt;
+    while (this.emitAcc >= 1) { this.emitAcc -= 1; this.spawnImpact(); }
+    const hitR2 = 1.7 * 1.7;                                  // 命中判定：晶體外接半徑內
+    for (let i = 0; i < this.impN; i++) {
+      if (this.impTtl[i] < 0) continue;
+      this.impTtl[i] -= dt;
+      const o = i * 3;
+      this.impPos[o] += this.impVel[o] * dt;
+      this.impPos[o + 1] += this.impVel[o + 1] * dt;
+      this.impPos[o + 2] += this.impVel[o + 2] * dt;
+      const d2 = this.impPos[o] ** 2 + this.impPos[o + 1] ** 2 + this.impPos[o + 2] ** 2;
+      if (d2 <= hitR2) {                                      // 砸中：能量灌入、粒子回收
+        this.excite = Math.min(1, this.excite + 0.05);
+        this.impTtl[i] = -1; this.impPos[o + 1] = -999;
+      } else if (this.impTtl[i] <= 0) {                       // 超齡回收
+        this.impTtl[i] = -1; this.impPos[o + 1] = -999;
+      }
+    }
+    this.impAttr.needsUpdate = true;
 
     // ④ 網路 → 邊緣流光速度
     const flow = 0.4 + Math.min(8, s.netMBs) * 1.6;
@@ -253,13 +328,17 @@ export class Crystal {
     this.crystal.quaternion.copy(this.qSpin);
     this.pokeV += (-260 * this.pokeX - 16 * this.pokeV) * dt;   // 彈簧：硬彈、兩下內穩定
     this.pokeX += this.pokeV * dt;
-    this.pivot.rotation.y = this.pX * 0.16 + this.pokeX * 0.5;
-    this.pivot.rotation.x = this.pY * 0.11 + this.pokeX * 0.3;
+    const j1 = this.excite * 0.045 * Math.sin(t * 57.9) * Math.sin(t * 23.7 + 1.7);    // 砸擊 → 高頻顫動（確定性偽噪音）
+    const j2 = this.excite * 0.05 * Math.sin(t * 49.3 + 0.6) * Math.sin(t * 31.1 + 2.3);
+    this.pivot.rotation.y = this.pX * 0.16 + this.pokeX * 0.5 + j1;
+    this.pivot.rotation.x = this.pY * 0.11 + this.pokeX * 0.3 + j2;
+    this.pivot.rotation.z = (j1 + j2) * 0.6;
     this.pivot.scale.setScalar(1 - Math.min(0.07, Math.abs(this.pokeX) * 0.45));
     this.ring.position.x = -this.pX * 0.22;
     this.ring.position.y = this.pY * 0.10;
 
     this.stars.rotation.y += 0.00015 * (dt * 60);
+    this.frames++;
     this.renderer.render(this.scene, this.camera);
   }
 }
