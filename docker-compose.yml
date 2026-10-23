@@ -2,7 +2,11 @@
 # 區網服務：只綁本機 port，不對外、不掛 Traefik
 services:
   gx10-mon:
-    build: .
+    build:
+      context: .
+      args:
+        # 部署端帶 git 短 hash 進鏡像（GIT_SHA=$(git rev-parse --short HEAD) docker compose build ...）
+        GIT_SHA: ${GIT_SHA:-dev}
     image: gx10-mon:local
     container_name: gx10-mon
     restart: unless-stopped

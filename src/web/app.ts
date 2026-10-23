@@ -21,6 +21,8 @@ Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(10,15,20,.92)';
 Chart.defaults.plugins.tooltip.borderColor = 'rgba(45,212,191,.3)';
 Chart.defaults.plugins.tooltip.borderWidth = 1;
 
+declare const __BUILD_INFO__: string;   // esbuild define 注入（scripts/build-web.mjs）
+
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const TEAL = '#2dd4bf', AMBER = '#f59e0b', CRIT = '#ef4444', BLUE = '#38bdf8', VIOLET = '#a78bfa', PINK = '#f472b6';
 const SOC_COLORS = [TEAL, BLUE, VIOLET, PINK, AMBER, '#34d399', '#fbbf24', '#94a3b8'];
@@ -679,5 +681,12 @@ async function boot(): Promise<void> {
       void loadHistory(t);
     });
   }, 5_000);
+}
+// 建置標籤：頁角小字，一眼辨識分頁跑的是哪一版（時光機分頁偵測器）
+{
+  const tag = document.createElement('div');
+  tag.id = 'buildTag';
+  tag.textContent = __BUILD_INFO__;
+  document.body.appendChild(tag);
 }
 void boot();
