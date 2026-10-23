@@ -12,6 +12,10 @@ export interface Drive {
 }
 
 // 溫度→色相：<=60 teal(168°)，~75 琥珀，>=90 全紅(0°)——紅端對齊 90°C 警戒線（正常重載峰 ~86 呈橘紅）
+// 砸擊配色（additive blending 下 RGB→0 即淡出，無需 per-particle opacity）
+const IMP_C = [1.0, 0.70, 0.28] as const;    // 琥珀流星
+const SPK_C = [1.0, 0.84, 0.55] as const;    // 命中水花（更亮的白琥珀）
+
 function tempColor(c: number): THREE.Color {
   const t = THREE.MathUtils.clamp((c - 60) / 30, 0, 1);
   const hue = THREE.MathUtils.lerp(168, 0, t) / 360;
@@ -35,6 +39,15 @@ export class Crystal {
   private impPos = new Float32Array(0);
   private impVel = new Float32Array(0);
   private impTtl = new Float32Array(0);   // <0 = 死粒子（泊於地下不可見）
+  private impCol = new Float32Array(0);
+  private impColAttr!: THREE.BufferAttribute;
+  private spkAttr!: THREE.BufferAttribute;
+  private spkColAttr!: THREE.BufferAttribute;
+  private spkPos = new Float32Array(0);
+  private spkVel = new Float32Array(0);
+  private spkTtl = new Float32Array(0);
+  private spkCol = new Float32Array(0);
+  private spkN = 0;
   private impN = 0;
   private emitAcc = 0;
   private excite = 0;                     // 激發能量：砸中+1粒，τ=0.45s 衰減 → 剧烈運動
@@ -154,12 +167,33 @@ export class Crystal {
     for (let i = 0; i < this.impN; i++) this.impPos[i * 3 + 1] = -999;
     const ig = new THREE.BufferGeometry();
     this.impAttr = new THREE.BufferAttribute(this.impPos, 3);
+    this.impCol = new Float32Array(this.impN * 3);
+    this.impColAttr = new THREE.BufferAttribute(this.impCol, 3);
     ig.setAttribute('position', this.impAttr);
+    ig.setAttribute('color', this.impColAttr);
     this.impacts = new THREE.Points(ig, new THREE.PointsMaterial({
-      color: 0xffb347, size: 0.09, transparent: true, opacity: 0.95,
+      vertexColors: true, size: 0.09, transparent: true, opacity: 0.95,
       depthWrite: false, blending: THREE.AdditiveBlending }));
     this.impacts.frustumCulled = false;   // 每幀 CPU 更新位置，毋需內建包圍球
     this.scene.add(this.impacts);
+
+    // 命中水花池：砸中瞬間自命中點爆散，additive＋vertex color 漸滅
+    this.spkN = innerWidth < 720 ? 40 : 80;
+    this.spkPos = new Float32Array(this.spkN * 3);
+    this.spkVel = new Float32Array(this.spkN * 3);
+    this.spkTtl = new Float32Array(this.spkN).fill(-1);
+    this.spkCol = new Float32Array(this.spkN * 3);
+    for (let i = 0; i < this.spkN; i++) this.spkPos[i * 3 + 1] = -999;
+    const spg = new THREE.BufferGeometry();
+    this.spkAttr = new THREE.BufferAttribute(this.spkPos, 3);
+    this.spkColAttr = new THREE.BufferAttribute(this.spkCol, 3);
+    spg.setAttribute('position', this.spkAttr);
+    spg.setAttribute('color', this.spkColAttr);
+    const sparksObj = new THREE.Points(spg, new THREE.PointsMaterial({
+      vertexColors: true, size: 0.07, transparent: true, opacity: 0.95,
+      depthWrite: false, blending: THREE.AdditiveBlending }));
+    sparksObj.frustumCulled = false;
+    this.scene.add(sparksObj);
   }
 
   setData(d: Drive): void { this.drive = d; }
@@ -188,13 +222,40 @@ export class Crystal {
     this.impPos[o] = px; this.impPos[o + 1] = py; this.impPos[o + 2] = pz;
     this.impVel[o] = -px / d * speed; this.impVel[o + 1] = -py / d * speed; this.impVel[o + 2] = -pz / d * speed;
     this.impTtl[i] = d / speed + 0.6;
+    this.impCol[o] = IMP_C[0]; this.impCol[o + 1] = IMP_C[1]; this.impCol[o + 2] = IMP_C[2];
+  }
+
+  /** 命中水花：命中點爆 4 點球面四散微粒 */
+  private spawnSplash(x: number, y: number, z: number): void {
+    for (let k = 0; k < 4; k++) {
+      const i = this.spkTtl.indexOf(-1);
+      if (i < 0) return;
+      const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+      const v = 2.5 + Math.random() * 2.5;
+      const o = i * 3;
+      this.spkPos[o] = x; this.spkPos[o + 1] = y; this.spkPos[o + 2] = z;
+      this.spkVel[o] = Math.sin(ph) * Math.cos(th) * v;
+      this.spkVel[o + 1] = Math.cos(ph) * v;
+      this.spkVel[o + 2] = Math.sin(ph) * Math.sin(th) * v;
+      this.spkTtl[i] = 0.25 + Math.random() * 0.25;
+      this.spkCol[o] = SPK_C[0]; this.spkCol[o + 1] = SPK_C[1]; this.spkCol[o + 2] = SPK_C[2];
+    }
+  }
+
+  private killImpact(i: number): void {
+    this.impTtl[i] = -1;
+    const o = i * 3;
+    this.impPos[o + 1] = -999;
+    this.impCol[o] = 0; this.impCol[o + 1] = 0; this.impCol[o + 2] = 0;
   }
 
   /** E2E 除錯：砸擊現況快照 */
-  get impactDebug(): { excite: number; alive: number; frames: number } {
+  get impactDebug(): { excite: number; alive: number; sparks: number; frames: number } {
     let alive = 0;
     for (let i = 0; i < this.impN; i++) if (this.impTtl[i] >= 0) alive++;
-    return { excite: this.excite, alive, frames: this.frames };
+    let sparks = 0;
+    for (let i = 0; i < this.spkN; i++) if (this.spkTtl[i] >= 0) sparks++;
+    return { excite: this.excite, alive, sparks, frames: this.frames };
   }
 
   setOn(on: boolean): void {
@@ -307,14 +368,35 @@ export class Crystal {
       this.impPos[o + 1] += this.impVel[o + 1] * dt;
       this.impPos[o + 2] += this.impVel[o + 2] * dt;
       const d2 = this.impPos[o] ** 2 + this.impPos[o + 1] ** 2 + this.impPos[o + 2] ** 2;
-      if (d2 <= hitR2) {                                      // 砸中：能量灌入、粒子回收
+      const fade = Math.min(1, this.impTtl[i] / 0.15);        // 末段淡出：砸中/超齡都不突消失
+      this.impCol[o] = IMP_C[0] * fade; this.impCol[o + 1] = IMP_C[1] * fade; this.impCol[o + 2] = IMP_C[2] * fade;
+      if (d2 <= hitR2) {                                      // 砸中：能量灌入＋命中點水花
         this.excite = Math.min(1, this.excite + 0.05);
-        this.impTtl[i] = -1; this.impPos[o + 1] = -999;
+        this.spawnSplash(this.impPos[o], this.impPos[o + 1], this.impPos[o + 2]);
+        this.killImpact(i);
       } else if (this.impTtl[i] <= 0) {                       // 超齡回收
-        this.impTtl[i] = -1; this.impPos[o + 1] = -999;
+        this.killImpact(i);
       }
     }
     this.impAttr.needsUpdate = true;
+    this.impColAttr.needsUpdate = true;
+
+    // 水花四散：速度阻尼收攏、亮度隨壽命漸滅
+    for (let i = 0; i < this.spkN; i++) {
+      if (this.spkTtl[i] < 0) continue;
+      this.spkTtl[i] -= dt;
+      const o = i * 3;
+      const damp = Math.exp(-dt * 3);
+      this.spkVel[o] *= damp; this.spkVel[o + 1] *= damp; this.spkVel[o + 2] *= damp;
+      this.spkPos[o] += this.spkVel[o] * dt;
+      this.spkPos[o + 1] += this.spkVel[o + 1] * dt;
+      this.spkPos[o + 2] += this.spkVel[o + 2] * dt;
+      const f = Math.max(0, Math.min(1, this.spkTtl[i] / 0.3));
+      this.spkCol[o] = SPK_C[0] * f; this.spkCol[o + 1] = SPK_C[1] * f; this.spkCol[o + 2] = SPK_C[2] * f;
+      if (this.spkTtl[i] <= 0) { this.spkTtl[i] = -1; this.spkPos[o + 1] = -999; }
+    }
+    this.spkAttr.needsUpdate = true;
+    this.spkColAttr.needsUpdate = true;
 
     // ④ 網路 → 邊緣流光速度
     const flow = 0.4 + Math.min(8, s.netMBs) * 1.6;
