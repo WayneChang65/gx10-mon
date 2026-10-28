@@ -3,13 +3,17 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { compress } from 'hono/compress';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { CFG } from './config.ts';
 import { Store } from './db.ts';
 import { Sampler } from './sampler.ts';
+import { BenchRunner, BenchError } from './bench.ts';
+import type { BenchReq } from './types.ts';
 
 const store = new Store();
 const sampler = new Sampler(store);
 sampler.start();
+const bench = new BenchRunner(store);
 
 const app = new Hono();
 // 歷史 JSON 是高重複文本，gzip 壓 ~9 成；SSE 即時幀很小不壓縮（compress 預設跳過 chunked 小回應亦可）
@@ -35,6 +39,42 @@ app.get('/api/history', c => {
 });
 
 app.get('/api/alerts', c => c.json(store.recentAlerts(100)));
+
+// ---- LLM Bench (manual-only speed test; one concurrent run) ----
+app.post('/api/bench/run', async c => {
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid JSON body' }, 400); }
+  try {
+    const run = await bench.run(body as BenchReq);
+    return c.json(run, run.status === 'ok' ? 200 : 502);
+  } catch (e) {
+    if (e instanceof BenchError) return c.json({ error: e.message }, e.code as ContentfulStatusCode);
+    return c.json({ error: String((e as Error)?.message ?? e) }, 500);
+  }
+});
+
+app.get('/api/bench/status', c => c.json(bench.status()));
+
+// Model-list proxy: the browser cannot call arbitrary endpoints directly (CORS).
+// The key travels in the POST body (never in URLs) and is only ever forwarded
+// to the endpoint the user typed on this card — never persisted, never logged.
+app.post('/api/bench/models', async c => {
+  let body: { endpoint?: string; apiKey?: string };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid JSON body' }, 400); }
+  try {
+    return c.json({ models: await bench.models(body?.endpoint ?? '', body?.apiKey ?? '') });
+  } catch (e) {
+    if (e instanceof BenchError) return c.json({ error: e.message }, e.code as ContentfulStatusCode);
+    return c.json({ error: String((e as Error)?.message ?? e) }, 500);
+  }
+});
+
+app.get('/api/bench/history', c => {
+  const n = Math.min(Math.max(Number(c.req.query('limit')) || 20, 1), 100);
+  return c.json(store.benchHistory(n));
+});
+
+app.delete('/api/bench/history', c => c.json({ ok: true, deleted: store.clearBench() }));
 
 // SSE 即時幀
 app.get('/api/stream', c => {

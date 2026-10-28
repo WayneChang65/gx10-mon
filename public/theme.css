@@ -198,3 +198,62 @@ td.num { text-align: right; color: var(--teal); }
   font-size: 10px; letter-spacing: .4px; color: #40716a; opacity: .85;
   pointer-events: none; user-select: all;
 }
+
+/* ---------- LLM Bench 卡（表單＋結果面板＋歷史） ---------- */
+.benchform { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+.benchform input {
+  background: rgba(10, 15, 20, .5); border: 1px solid var(--line); color: var(--txt);
+  font-family: var(--mono); font-size: 11px; padding: 6px 9px; border-radius: 8px; min-width: 0;
+}
+.benchform input:focus { outline: none; border-color: var(--teal); }
+.benchform .bnum input { width: 72px; }
+#bEndpoint { flex: 2 1 220px; }
+#bModel { flex: 1 1 150px; }
+.keywrap { position: relative; flex: 1 1 150px; display: flex; min-width: 0; }
+.keywrap input { flex: 1; width: 100%; padding-right: 26px; }
+#bEye { position: absolute; right: 2px; top: 50%; translate: 0 -50%;
+  background: transparent; border: none; color: var(--dim); font-size: 11px; cursor: pointer; padding: 4px 6px; }
+#bEye:hover { color: var(--teal); }
+.benchform label { font-size: 10px; color: var(--dim); display: flex; gap: 5px; align-items: center; white-space: nowrap; }
+.bchk input { accent-color: var(--teal); }
+#bModelLoad, .brun {
+  background: transparent; border: 1px solid var(--line); color: var(--dim);
+  font-family: var(--mono); font-size: 11px; padding: 6px 10px; border-radius: 8px; cursor: pointer;
+}
+#bModelLoad:hover { color: var(--teal); border-color: var(--teal); }
+.brun { color: var(--teal); border-color: var(--teal); }
+.brun:disabled { opacity: .55; cursor: wait; }
+.bnote { font-size: 10.5px; color: var(--dim); min-height: 14px; margin: 2px 0 4px; }
+.bnote.warn { color: var(--amber); }
+.bnote.err { color: var(--crit); }
+.bstats { display: flex; gap: 26px; align-items: flex-end; margin: 4px 0 10px; flex-wrap: wrap; }
+.bstat { display: flex; flex-direction: column; gap: 2px; }
+.bstat label { font-size: 9.5px; color: var(--dim); letter-spacing: .14em; display: flex; gap: 6px; align-items: center; }
+.bstat label small { color: var(--dim); letter-spacing: .04em; font-size: 9px; }
+.bstat b { font-size: 22px; color: var(--teal); font-weight: 600; font-variant-numeric: tabular-nums; }
+.bbadge { font-size: 8.5px; border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; letter-spacing: .05em; }
+.bbadge.eng { color: var(--teal); border-color: rgba(45, 212, 191, .45); }
+.bbadge.cli { color: var(--amber); border-color: rgba(245, 158, 11, .45); }
+.bmeta { align-self: center; font-size: 10px; color: var(--dim); }
+#bHist td { max-width: 210px; }
+#bHist tr.berr td { color: var(--crit); }
+#bHist thead th { text-align: right; }
+#bHist thead th:nth-child(1), #bHist thead th:nth-child(2),
+#bHist thead th:nth-child(3), #bHist thead th:nth-child(7) { text-align: left; }
+#bHist td.bdate { white-space: nowrap; color: var(--dim); }
+#bHist th:nth-child(7), #bHist td.bnote { padding-left: 16px; }
+#bHist td.bnote { color: var(--dim); font-size: 10px; max-width: 280px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bhistbar { display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; }
+.bhistbar span { font-size: 9.5px; color: var(--dim); letter-spacing: .14em; }
+#bClear { margin-left: auto; font-size: 9.5px; color: var(--dim); background: none;
+  border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px;
+  cursor: pointer; font-family: inherit; letter-spacing: .06em; }
+#bClear:hover, #bClear.confirm { color: var(--crit); border-color: var(--crit); }
+.benchlabel { flex: 1 1 220px; min-width: 140px; }
+.card.min .benchbox { display: none; }   /* 摺態：收表單/結果/歷史，只留標題列摘要 */
+@media (max-width: 720px) {
+  .bstats { gap: 16px; }
+  .bstat b { font-size: 17px; }
+  .brun { margin-left: 0; }
+}

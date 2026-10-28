@@ -115,9 +115,10 @@ const ICON_FULL = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" s
 // 摺疊態記憶（重開網頁維持使用者上次摺了哪幾張圖）
 // 出廠預設：只有 GPU 展開，其餘全摺成摘要行；用戶動過的圖以 localStorage 為準
 // 註：key 升 v2——讓新預設對舊瀏覽器記憶直接生效（v1 時代預設全展開，已無意義）
-const FOLD_KEY = '***';
+const FOLD_KEY = 'gxmon-fold';
 const FOLD_DEFAULT: Record<string, boolean> = {
   cpu: true, gpu: false, mem: true, temp: true, net: true, disk: true, proccpu: true, procmem: true,
+  bench: false,
 };
 const procSums: Partial<Record<'proccpu' | 'procmem', HTMLElement>> = {};
 function loadFolded(): Record<string, boolean> {
@@ -648,9 +649,253 @@ function initPointerFx(): void {
   }, { passive: true });
 }
 
+// ---------- LLM Bench（手動測速卡：prefill / decode / TTFT） ----------
+interface BenchRun {
+  ts: number; endpoint: string; model: string; status: 'ok' | 'err';
+  promptTokens: number | null; genTokens: number | null; ttftMs: number | null;
+  prefillTps: number | null; decodeTps: number | null;
+  enginePrefillTps: number | null; engineDecodeTps: number | null;
+  clientPrefillTps: number | null; clientDecodeTps: number | null;
+  engineMetrics: boolean; cacheHits: number | null; note?: string; err?: string;
+}
+const BFORM_KEY = 'gxmon-bench-form';
+const BKEY_KEY = 'gxmon-bench-key';   // only written when the user checks "Remember key"
+let benchBusy = false;
+let benchSum: HTMLElement | null = null;
+let benchLast: BenchRun | null = null;
+
+const bnum = (v: number | null): string =>
+  v === null || !Number.isFinite(v) ? '—' : v.toLocaleString('en-US', { maximumFractionDigits: 0 });
+const bfmtK = (v: number | null): string =>
+  v === null || !Number.isFinite(v) ? '—' : v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0);
+
+const fmtDateTime = (ts: number): string => {
+  const d = new Date(ts);
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
+const besc = (s: string): string =>
+  s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch] as string);
+
+function benchNote(msg: string, kind: 'ok' | 'warn' | 'err'): void {
+  const el = $('bNote');
+  el.textContent = msg;
+  el.className = 'bnote' + (kind === 'warn' ? ' warn' : kind === 'err' ? ' err' : '');
+}
+
+function benchReset(): void {
+  benchLast = null;
+  $('bTtft').textContent = '—';
+  $('bPre').textContent = '—';
+  $('bDec').textContent = '—';
+  $('bPreB').textContent = ''; $('bPreB').className = 'bbadge';
+  $('bDecB').textContent = ''; $('bDecB').className = 'bbadge';
+  $('bMeta').textContent = '';
+  benchNote('', 'ok');
+  benchSummary();
+}
+
+function benchSummary(): void {
+  if (!benchSum || benchSum.style.display === 'none') return;
+  const r = benchLast;
+  if (!r) { benchSum.innerHTML = '<em>no runs yet</em>'; return; }
+  const t = new Date(r.ts).toLocaleTimeString('zh-TW', { hour12: false });
+  benchSum.innerHTML = r.status !== 'ok'
+    ? `<i style="background:${CRIT}"></i><em>last</em>${t} failed`
+    : `<i style="background:${TEAL}"></i><em>last</em>${t} ${r.model.slice(0, 18)} · P ${bfmtK(r.prefillTps)} · D ${r.decodeTps === null ? '—' : r.decodeTps.toFixed(1)} tok/s`;
+}
+
+function benchRender(r: BenchRun): void {
+  benchLast = r;
+  $('bTtft').textContent = r.ttftMs === null ? '—' : (r.ttftMs / 1000).toFixed(2) + 's';
+  $('bPre').textContent = bfmtK(r.prefillTps);
+  $('bDec').textContent = r.decodeTps === null ? '—' : r.decodeTps.toFixed(1);
+  const preB = $('bPreB'), decB = $('bDecB');
+  preB.textContent = r.enginePrefillTps !== null ? 'engine' : r.clientPrefillTps !== null ? 'client' : '';
+  preB.className = 'bbadge ' + (r.enginePrefillTps !== null ? 'eng' : 'cli');
+  decB.textContent = r.engineDecodeTps !== null ? 'engine' : r.clientDecodeTps !== null ? 'client' : '';
+  decB.className = 'bbadge ' + (r.engineDecodeTps !== null ? 'eng' : 'cli');
+  const t = new Date(r.ts).toLocaleTimeString('zh-TW', { hour12: false });
+  $('bMeta').textContent = r.status === 'ok'
+    ? `${r.model} · prompt ${bnum(r.promptTokens)} tok · gen ${bnum(r.genTokens)} tok · ${t}`
+    : `${r.model} · ${t}`;
+  if (r.status !== 'ok') benchNote(r.err || 'run failed', 'err');
+  else if (r.note) benchNote(r.note, 'warn');
+  else benchNote('engine = /metrics counter diff (excl. queue & network) · client = stream timing', 'ok');
+  benchSummary();
+}
+
+async function benchHistoryLoad(): Promise<void> {
+  try {
+    const rows = await (await fetch('/api/bench/history?limit=10')).json() as BenchRun[];
+    const tb = $('bHist').querySelector('tbody')!;
+    tb.innerHTML = rows.map(r => {
+      const t = fmtDateTime(r.ts);
+      let host = r.endpoint;
+      try { host = new URL(r.endpoint).host; } catch { /* keep raw */ }
+      const noteTxt = [r.note ?? '', r.status !== 'ok' ? `✕ ${(r.err ?? 'failed').slice(0, 90)}` : '']
+        .filter(Boolean).join(' · ');
+      const note = `<td class="bnote">${besc(noteTxt) || '—'}</td>`;
+      if (r.status !== 'ok')
+        return `<tr class="berr"><td class="bdate">${t}</td><td>${besc(host)}</td><td>${besc(r.model)}</td>`
+          + `<td class="num">—</td><td class="num">—</td><td class="num">—</td>${note}</tr>`;
+      return `<tr><td class="bdate">${t}</td><td>${besc(host)}</td><td>${besc(r.model)}</td>`
+        + `<td class="num">${r.ttftMs === null ? '—' : (r.ttftMs / 1000).toFixed(2) + 's'}</td>`
+        + `<td class="num">${bfmtK(r.prefillTps)}</td>`
+        + `<td class="num">${r.decodeTps === null ? '—' : r.decodeTps.toFixed(1)}</td>${note}</tr>`;
+    }).join('');
+    if (!benchLast) {
+      const firstOk = rows.find(r => r.status === 'ok');
+      if (firstOk) benchRender(firstOk); else benchSummary();
+    }
+  } catch { /* history fetch failure is not fatal */ }
+}
+
+async function benchRunClick(): Promise<void> {
+  if (benchBusy) return;
+  const mtRaw = ($('bMaxTok') as HTMLInputElement).value.trim();
+  const pwRaw = ($('bWords') as HTMLInputElement).value.trim();
+  const req = {
+    endpoint: ($('bEndpoint') as HTMLInputElement).value.trim(),
+    apiKey: ($('bKey') as HTMLInputElement).value,
+    model: ($('bModel') as HTMLInputElement).value.trim(),
+    maxTokens: Number(mtRaw),
+    promptWords: Number(pwRaw),
+    think: ($('bThink') as HTMLInputElement).checked,
+    label: ($('bLabel') as HTMLInputElement).value.trim(),
+  };
+  if (!/^https?:\/\//i.test(req.endpoint)) { benchNote('Endpoint must start with http:// or https://', 'err'); return; }
+  if (!req.model) { benchNote('Model is required — press ⬇ List to fetch it', 'err'); return; }
+  if (!/^\d{1,5}$/.test(mtRaw) || req.maxTokens < 16 || req.maxTokens > 1024) { benchNote('Max tokens: a whole number between 16 and 1024', 'err'); return; }
+  if (!/^\d{1,5}$/.test(pwRaw) || req.promptWords < 50 || req.promptWords > 4000) { benchNote('Prompt words: a whole number between 50 and 4000', 'err'); return; }
+  // Remember non-secret form fields; the key follows the "Remember key" checkbox (off by default)
+  localStorage.setItem(BFORM_KEY, JSON.stringify({
+    endpoint: req.endpoint, model: req.model, maxTokens: req.maxTokens,
+    promptWords: req.promptWords, think: req.think,
+  }));
+  if (($('bRemember') as HTMLInputElement).checked) localStorage.setItem(BKEY_KEY, req.apiKey);
+  else localStorage.removeItem(BKEY_KEY);
+
+  benchBusy = true;
+  const btn = $('bRun') as HTMLButtonElement;
+  btn.disabled = true;
+  const started = Date.now();
+  const tick = setInterval(() => {
+    void fetch('/api/bench/status').then(r => r.json()).then((st: { busy: boolean; stage: string }) => {
+      // Staleness guard: a late reply from an in-flight status poll must never
+      // overwrite the restored button after the run finished (race seen under latency).
+      if (!benchBusy) return;
+      btn.textContent = `Running ${((Date.now() - started) / 1000).toFixed(1)}s${st.busy && st.stage ? ' · ' + st.stage : ''}`;
+    }).catch(() => { /* status poll failure is display-only */ });
+  }, 500);
+  benchNote('', 'ok');
+  try {
+    const res = await fetch('/api/bench/run', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req),
+    });
+    const j = await res.json().catch(() => null) as (BenchRun & { error?: string }) | null;
+    if (res.status === 409) benchNote('A bench run is already in progress', 'warn');
+    else if (j && j.ts) benchRender(j);
+    else benchNote(j?.error ?? `HTTP ${res.status}`, 'err');
+  } catch (e) {
+    benchNote(String((e as Error).message ?? e), 'err');
+  } finally {
+    clearInterval(tick);
+    benchBusy = false;
+    btn.disabled = false;
+    btn.textContent = '▶ Run';
+    void benchHistoryLoad();
+  }
+}
+
+function benchBoot(): void {
+  try {
+    const f = JSON.parse(localStorage.getItem(BFORM_KEY) ?? '{}') as
+      Partial<{ endpoint: string; model: string; maxTokens: number; promptWords: number; think: boolean }>;
+    if (f.endpoint) ($('bEndpoint') as HTMLInputElement).value = f.endpoint;
+    if (f.model) ($('bModel') as HTMLInputElement).value = f.model;
+    if (f.maxTokens) ($('bMaxTok') as HTMLInputElement).value = String(f.maxTokens);
+    if (f.promptWords) ($('bWords') as HTMLInputElement).value = String(f.promptWords);
+    if (f.think !== undefined) ($('bThink') as HTMLInputElement).checked = !!f.think;
+  } catch { /* broken storage is not fatal */ }
+  const savedKey = localStorage.getItem(BKEY_KEY);
+  if (savedKey) {
+    ($('bKey') as HTMLInputElement).value = savedKey;
+    ($('bRemember') as HTMLInputElement).checked = true;
+  }
+  $('bRemember').addEventListener('change', () => {
+    if (!($('bRemember') as HTMLInputElement).checked) localStorage.removeItem(BKEY_KEY);
+  });
+  $('bEye').addEventListener('click', () => {
+    const k = $('bKey') as HTMLInputElement;
+    k.type = k.type === 'password' ? 'text' : 'password';
+  });
+  $('bModelLoad').addEventListener('click', () => {
+    const endpoint = ($('bEndpoint') as HTMLInputElement).value.trim();
+    if (!/^https?:\/\//i.test(endpoint)) { benchNote('Type the endpoint first, then fetch the model list', 'err'); return; }
+    const lb = $('bModelLoad') as HTMLButtonElement;
+    lb.disabled = true;
+    benchNote('', 'ok');
+    void fetch('/api/bench/models', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ endpoint, apiKey: ($('bKey') as HTMLInputElement).value }),
+    }).then(r => r.json()).then((j: { models?: string[]; error?: string }) => {
+      if (!j.models) { benchNote(j.error ?? 'failed to load models', 'err'); return; }
+      $('bModels').innerHTML = j.models
+        .map(m => `<option value="${m.replace(/"/g, '&quot;')}"></option>`).join('');
+      if (!($('bModel') as HTMLInputElement).value && j.models.length)
+        ($('bModel') as HTMLInputElement).value = j.models[0];
+      benchNote(`${j.models.length} model(s) loaded`, 'ok');
+    }).catch(e => benchNote(String((e as Error).message ?? e), 'err'))
+      .finally(() => { lb.disabled = false; });
+  });
+  $('bRun').addEventListener('click', () => void benchRunClick());
+  let clearArmed = 0;
+  $('bClear').addEventListener('click', () => {
+    const b = $('bClear') as HTMLButtonElement;
+    if (Date.now() - clearArmed < 4000) {           // second click within 4s = confirm
+      clearArmed = 0;
+      b.textContent = '✕ Clear'; b.classList.remove('confirm');
+      void fetch('/api/bench/history', { method: 'DELETE' }).then(() => { benchReset(); void benchHistoryLoad(); });
+    } else {
+      clearArmed = Date.now();
+      b.textContent = 'Sure?'; b.classList.add('confirm');
+      setTimeout(() => {
+        if (Date.now() - clearArmed >= 4000) { b.textContent = '✕ Clear'; b.classList.remove('confirm'); }
+      }, 4200);
+    }
+  });
+
+  // 摺鈕走 data-p 分流（仿 Top 表卡）：摺起來收成一條「最新結果」摘要
+  const card = $('bBench');
+  const h3 = card.querySelector('h3')!;
+  const sum = document.createElement('span');
+  sum.className = 'sumline'; sum.style.display = 'none';
+  h3.insertBefore(sum, h3.querySelector('.ranges'));
+  benchSum = sum;
+  const fb = document.createElement('button');
+  fb.className = 'foldb'; fb.title = 'Collapse to summary / expand'; fb.innerHTML = ICON_FOLD;
+  fb.onclick = () => {
+    const min = card.classList.toggle('min');
+    fb.innerHTML = min ? ICON_FULL : ICON_FOLD;
+    fb.classList.toggle('on', min);
+    sum.style.display = min ? 'inline-flex' : 'none';
+    saveFolded('bench', min);
+    benchSummary();
+  };
+  h3.querySelector('.ranges')!.appendChild(fb);
+  if (loadFolded()['bench']) {
+    card.classList.add('min');
+    fb.innerHTML = ICON_FULL; fb.classList.add('on');
+    sum.style.display = 'inline-flex';
+  }
+  void benchHistoryLoad();   // 開卡就帶回歷史與最新結果
+}
+
 async function boot(): Promise<void> {
   buildCharts();
   initPointerFx();
+  benchBoot();
   // 從背景喚回：SSE 可能剛重連、手機可能轉了屏——圖表全部重繪一遍
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;

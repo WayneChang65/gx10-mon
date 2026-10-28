@@ -1,9 +1,9 @@
 {
   "name": "gx10-mon",
-  "version": "0.1.1",
+  "version": "0.2.5",
   "private": true,
   "type": "module",
-  "description": "gx10 (DGX Spark) system monitor dashboard — TypeScript, zero heavy deps",
+  "description": "gx10 (DGX Spark) system monitor dashboard \u2014 TypeScript, zero heavy deps",
   "engines": {
     "node": ">=24.0.0"
   },

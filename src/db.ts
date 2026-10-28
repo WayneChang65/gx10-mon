@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { CFG } from './config.ts';
-import type { Sample, AlertEvent, AlertKind } from './types.ts';
+import type { Sample, AlertEvent, AlertKind, BenchRun } from './types.ts';
 
 export class Store {
   private db: DatabaseSync;
@@ -22,7 +22,15 @@ export class Store {
         bucket INTEGER PRIMARY KEY, step INTEGER NOT NULL, json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS alerts(
         ts INTEGER PRIMARY KEY, kind TEXT, state TEXT, value REAL, msg TEXT);
-      CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);`);
+      CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
+      CREATE TABLE IF NOT EXISTS bench_runs(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER, endpoint TEXT, model TEXT, status TEXT,
+        prompt_tokens INTEGER, gen_tokens INTEGER, ttft_ms REAL,
+        prefill_tps REAL, decode_tps REAL,
+        engine_prefill_tps REAL, engine_decode_tps REAL,
+        client_prefill_tps REAL, client_decode_tps REAL,
+        engine_metrics INTEGER, cache_hits INTEGER, note TEXT, err TEXT);`);
     this.insRaw = this.db.prepare('INSERT OR REPLACE INTO raw(ts, json) VALUES(?,?)');
     this.insAgg = this.db.prepare('INSERT OR REPLACE INTO agg(bucket, step, json) VALUES(?,?,?)');
     // 讀取上次記錄的原始間隔，若設定變過就重整對齊
@@ -89,5 +97,47 @@ export class Store {
   }
   lastAlertState(kind: AlertKind): AlertEvent | undefined {
     return this.db.prepare('SELECT ts,kind,state,value,msg FROM alerts WHERE kind=? ORDER BY ts DESC LIMIT 1').get(kind) as unknown as AlertEvent | undefined;
+  }
+
+  // ---- LLM Bench history (kept out of raw/agg prune; capped at 500 rows) ----
+  putBench(r: BenchRun): void {
+    this.db.prepare(`INSERT INTO bench_runs(
+      ts,endpoint,model,status,prompt_tokens,gen_tokens,ttft_ms,
+      prefill_tps,decode_tps,engine_prefill_tps,engine_decode_tps,
+      client_prefill_tps,client_decode_tps,engine_metrics,cache_hits,note,err)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(r.ts, r.endpoint, r.model, r.status, r.promptTokens, r.genTokens, r.ttftMs,
+        r.prefillTps, r.decodeTps, r.enginePrefillTps, r.engineDecodeTps,
+        r.clientPrefillTps, r.clientDecodeTps, r.engineMetrics ? 1 : 0, r.cacheHits,
+        r.note ?? null, r.err ?? null);
+    this.db.exec('DELETE FROM bench_runs WHERE id NOT IN (SELECT id FROM bench_runs ORDER BY ts DESC LIMIT 500)');
+  }
+
+  clearBench(): number {
+    return Number(this.db.prepare('DELETE FROM bench_runs').run().changes);
+  }
+
+  benchHistory(limit: number): BenchRun[] {
+    const rows = this.db.prepare(
+      'SELECT ts,endpoint,model,status,prompt_tokens,gen_tokens,ttft_ms,prefill_tps,decode_tps,' +
+      'engine_prefill_tps,engine_decode_tps,client_prefill_tps,client_decode_tps,engine_metrics,cache_hits,note,err ' +
+      'FROM bench_runs ORDER BY ts DESC LIMIT ?').all(limit) as Record<string, unknown>[];
+    return rows.map((x) => ({
+      ts: Number(x.ts), endpoint: String(x.endpoint), model: String(x.model),
+      status: x.status === 'ok' ? 'ok' : 'err',
+      promptTokens: x.prompt_tokens == null ? null : Number(x.prompt_tokens),
+      genTokens: x.gen_tokens == null ? null : Number(x.gen_tokens),
+      ttftMs: x.ttft_ms == null ? null : Number(x.ttft_ms),
+      prefillTps: x.prefill_tps == null ? null : Number(x.prefill_tps),
+      decodeTps: x.decode_tps == null ? null : Number(x.decode_tps),
+      enginePrefillTps: x.engine_prefill_tps == null ? null : Number(x.engine_prefill_tps),
+      engineDecodeTps: x.engine_decode_tps == null ? null : Number(x.engine_decode_tps),
+      clientPrefillTps: x.client_prefill_tps == null ? null : Number(x.client_prefill_tps),
+      clientDecodeTps: x.client_decode_tps == null ? null : Number(x.client_decode_tps),
+      engineMetrics: !!x.engine_metrics,
+      cacheHits: x.cache_hits == null ? null : Number(x.cache_hits),
+      note: x.note == null ? undefined : String(x.note),
+      err: x.err == null ? undefined : String(x.err),
+    }));
   }
 }

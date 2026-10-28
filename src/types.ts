@@ -30,3 +30,34 @@ export interface AlertEvent {
   value: number;
   msg: string;
 }
+
+// ---- LLM Bench ----
+export interface BenchReq {
+  endpoint: string;
+  apiKey?: string;
+  model: string;
+  maxTokens?: number;
+  promptWords?: number;
+  think?: boolean;
+  label?: string;
+}
+
+export interface BenchRun {
+  ts: number;
+  endpoint: string;
+  model: string;
+  status: 'ok' | 'err';
+  promptTokens: number | null;
+  genTokens: number | null;
+  ttftMs: number | null;
+  prefillTps: number | null;   // display value: engine if available, else client
+  decodeTps: number | null;
+  enginePrefillTps: number | null;
+  engineDecodeTps: number | null;
+  clientPrefillTps: number | null;
+  clientDecodeTps: number | null;
+  engineMetrics: boolean;
+  cacheHits: number | null;
+  note?: string;
+  err?: string;
+}

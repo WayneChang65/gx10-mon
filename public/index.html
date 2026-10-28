@@ -69,6 +69,41 @@
       <table id="tMem"><thead><tr><th>PID</th><th>Process</th><th>MB</th></tr></thead><tbody></tbody></table>
     </div>
   </section>
+
+  <section id="bench">
+    <div class="card" id="bBench">
+      <h3>LLM Bench <small>prefill · decode · TTFT</small><span class="ranges" data-p="bench"></span></h3>
+      <div class="benchbox">
+        <div class="benchform">
+          <input id="bEndpoint" type="text" placeholder="http://host:port" spellcheck="false" autocomplete="off">
+          <span class="keywrap">
+            <input id="bKey" type="password" placeholder="API key (optional)" autocomplete="off">
+            <button type="button" id="bEye" title="Show / hide key">◉</button>
+          </span>
+          <input id="bModel" type="text" list="bModels" placeholder="model" spellcheck="false" autocomplete="off">
+          <datalist id="bModels"></datalist>
+          <button type="button" id="bModelLoad" title="Fetch model list from endpoint">⬇ List</button>
+        </div>
+        <div class="benchform">
+          <label class="bnum" title="Tokens generated in the decode phase">Max tok <input id="bMaxTok" type="text" inputmode="numeric" maxlength="5" value="512"></label>
+          <label class="bnum" title="Approximate prompt size in words">Words <input id="bWords" type="text" inputmode="numeric" maxlength="5" value="2000"></label>
+          <label class="bchk" title="Keep thinking/reasoning tokens (counted into decode)"><input id="bThink" type="checkbox"> Think</label>
+          <label class="bchk" title="Store the key in this browser (localStorage)"><input id="bRemember" type="checkbox"> Remember key</label>
+          <button type="button" id="bRun" class="brun">▶ Run</button>
+          <input id="bLabel" type="text" class="benchlabel" placeholder="Comment (optional — recorded as the last column of history)" spellcheck="false" autocomplete="off">
+        </div>
+        <div id="bNote" class="bnote"></div>
+        <div class="bstats">
+          <div class="bstat"><label>TTFT</label><b id="bTtft">—</b></div>
+          <div class="bstat"><label>PREFILL <span id="bPreB" class="bbadge"></span><small>tok/s</small></label><b id="bPre">—</b></div>
+          <div class="bstat"><label>DECODE <span id="bDecB" class="bbadge"></span><small>tok/s</small></label><b id="bDec">—</b></div>
+          <div class="bmeta" id="bMeta"></div>
+        </div>
+        <div class="bhistbar"><span>HISTORY</span><button type="button" id="bClear" title="Clear all history rows">✕ Clear</button></div>
+<table id="bHist"><thead><tr><th>Date</th><th>Endpoint</th><th>Model</th><th>TTFT</th><th>Prefill</th><th>Decode</th><th>Note</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </section>
 </main>
 
 <script src="/app.js"></script>
